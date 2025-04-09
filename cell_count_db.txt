@@ -1,0 +1,113 @@
+1. 
+-- Core Tables
+CREATE TABLE projects (
+    project_id SERIAL PRIMARY KEY,
+    project_name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT
+);
+
+CREATE TABLE subjects (
+    subject_id SERIAL PRIMARY KEY,
+    subject_code VARCHAR(255) NOT NULL UNIQUE, -- e.g., sbj1
+    age INTEGER,
+    sex VARCHAR(10),
+    condition VARCHAR(255)
+);
+
+CREATE TABLE treatments (
+    treatment_id SERIAL PRIMARY KEY,
+    treatment_name VARCHAR(255) NOT NULL UNIQUE
+);
+
+-- Joining/Fact Table
+CREATE TABLE samples (
+    sample_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id),
+    subject_id INTEGER REFERENCES subjects(subject_id),
+    treatment_id INTEGER REFERENCES treatments(treatment_id),
+    sample_code VARCHAR(255) NOT NULL UNIQUE,   -- e.g., s1
+    sample_type VARCHAR(255),                    -- e.g., PBMC, Tumor
+    time_from_treatment_start INTEGER,          -- Time in days/units
+    response BOOLEAN,                             -- True for responder, False for non-responder
+    date_collected DATE,
+    notes TEXT
+);
+
+-- Cell Count Data (EAV Model)
+CREATE TABLE cell_populations (
+    population_id SERIAL PRIMARY KEY,
+    population_name VARCHAR(255) NOT NULL UNIQUE  -- e.g., b_cell, cd8_t_cell
+);
+
+CREATE TABLE cell_counts (
+    sample_id INTEGER REFERENCES samples(sample_id),
+    population_id INTEGER REFERENCES cell_populations(population_id),
+    cell_count INTEGER NOT NULL,
+    PRIMARY KEY (sample_id, population_id)
+);
+
+-- Audit trail table
+CREATE TABLE data_changes (
+    change_id SERIAL PRIMARY KEY,
+    table_name VARCHAR(255) NOT NULL,
+    column_name VARCHAR(255) NOT NULL,
+    row_id INTEGER NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    changed_by VARCHAR(255),
+    change_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+2. The advantages of using a database include:
+    - scalability: large datasets can be handled easily
+    - data integrity: data types, constraints, and relationships are enforced
+    - querying: allows for complex queries
+    - reporting: facilitates the creation of summaries and reports
+    - data integration: data from multiple sources are integrated
+    - security: different people can be given different levels of access control
+
+3. 
+SELECT condition, COUNT(DISTINCT subject_id) AS number_of_subjects
+FROM subjects
+GROUP BY condition;
+
+4. 
+SELECT s.sample_code
+FROM samples s
+JOIN subjects sub ON s.subject_id = sub.subject_id
+JOIN treatments t ON s.treatment_id = t.treatment_id
+WHERE sub.condition = 'melanoma'
+  AND s.sample_type = 'PBMC'
+  AND s.time_from_treatment_start = 0
+  AND t.treatment_name = 'tr1';
+
+5. 
+WITH baseline_samples AS (
+    SELECT s.sample_id, s.project_id, s.subject_id, s.response
+    FROM samples s
+    JOIN subjects sub ON s.subject_id = sub.subject_id
+    JOIN treatments t ON s.treatment_id = t.treatment_id
+    WHERE sub.condition = 'melanoma'
+      AND s.sample_type = 'PBMC'
+      AND s.time_from_treatment_start = 0
+      AND t.treatment_name = 'tr1'
+)
+
+a. 
+SELECT p.project_name, COUNT(bs.sample_id) AS number_of_samples
+FROM baseline_samples AS bs
+JOIN projects p ON bs.project_id = p.project_id
+GROUP BY p.project_name;
+
+b. 
+SELECT
+    CASE WHEN response = TRUE THEN 'Responder' ELSE 'Non-Responder' END AS response_group,
+    COUNT(*) AS number_of_samples
+FROM baseline_samples
+GROUP BY response;
+
+c. 
+SELECT sub.sex, COUNT(*) AS number_of_samples
+FROM baseline_samples bs
+JOIN subjects sub ON bs.subject_id = sub.subject_id
+GROUP BY sub.sex;
